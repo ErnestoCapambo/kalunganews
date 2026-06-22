@@ -80,6 +80,12 @@ export function Footer() {
         <p className="text-center text-xs text-muted-foreground">
           © {new Date().getFullYear()} {SITE_NAME}. Todos os direitos reservados.
         </p>
+        <a
+          href="https://www.effectivecpmnetwork.com/fybr8v6rkj?key=31f2f112d9c23fad70d214dbed6aeba5"
+          className="sr-only"
+        >
+          effectivecpmnetwork
+        </a>
       </div>
     </footer>
   );

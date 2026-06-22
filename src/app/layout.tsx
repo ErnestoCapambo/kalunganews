@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Script from "next/script";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Header } from "@/components/layout/header";
 import { Footer } from "@/components/layout/footer";
@@ -41,9 +42,17 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} dark h-full antialiased`}
     >
       <body className="min-h-full flex flex-col bg-background">
+        <Script
+          src="https://pl29843789.effectivecpmnetwork.com/4b/72/b2/4b72b22779695631038583eb2257db93.js"
+          strategy="beforeInteractive"
+        />
         <Header />
         <main className="flex-1">{children}</main>
         <Footer />
+        <Script
+          src="https://pl29843791.effectivecpmnetwork.com/cf/a2/05/cfa20562691c1560e9ba4904fde7a9b9.js"
+          strategy="lazyOnload"
+        />
       </body>
     </html>
   );
