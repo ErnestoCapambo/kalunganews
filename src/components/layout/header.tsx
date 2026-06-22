@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { Menu, Search, Globe2 } from "lucide-react";
+import { Menu, Search, Globe2, Radio } from "lucide-react";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
@@ -37,6 +37,13 @@ export function Header() {
           </Link>
 
           <nav className="hidden items-center gap-1 md:flex">
+            <Link
+              href="/ao-vivo"
+              className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm text-red-400 transition-colors hover:bg-red-950/30 hover:text-red-300"
+            >
+              <Radio className="h-3.5 w-3.5" />
+              Ao Vivo
+            </Link>
             {CATEGORIES.slice(0, 5).map((cat) => (
               <Link
                 key={cat.id}
@@ -67,6 +74,17 @@ export function Header() {
               </SheetTrigger>
               <SheetContent side="right" className="w-80 border-white/10 bg-background/95 backdrop-blur-xl">
                 <div className="mt-8 flex flex-col gap-2">
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+                    Transmissão
+                  </p>
+                  <Link
+                    href="/ao-vivo"
+                    onClick={() => setMobileOpen(false)}
+                    className="mb-4 flex items-center gap-3 rounded-lg px-3 py-2.5 text-red-400 transition-colors hover:bg-red-950/30"
+                  >
+                    <Radio className="h-4 w-4" />
+                    Ao Vivo
+                  </Link>
                   <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
                     Categorias
                   </p>

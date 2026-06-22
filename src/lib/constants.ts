@@ -39,3 +39,4 @@ export const REGIONS: { label: string; icon: "americas" | "europe" | "asia" | "a
 export const SITE_NAME = "Kalunga News";
 export const SITE_DESCRIPTION =
   "Notícias do mundo inteiro em tempo real — categorias, análises e breaking news.";
+export const DEVELOPER_NAME = "Ernesto Sikilita Capambo";

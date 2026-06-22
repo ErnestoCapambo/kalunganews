@@ -1,9 +1,9 @@
 import Link from "next/link";
-import { Globe2 } from "lucide-react";
+import { Globe2, Radio } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { CategoryIcon } from "@/components/icons/category-icon";
 import { RegionIcon } from "@/components/icons/region-icon";
-import { CATEGORIES, REGIONS, SITE_NAME } from "@/lib/constants";
+import { CATEGORIES, REGIONS, SITE_NAME, DEVELOPER_NAME } from "@/lib/constants";
 
 export function Footer() {
   return (
@@ -58,6 +58,19 @@ export function Footer() {
 
           <div>
             <h3 className="mb-3 text-sm font-semibold uppercase tracking-wider">
+              Ao Vivo
+            </h3>
+            <Link
+              href="/ao-vivo"
+              className="inline-flex items-center gap-2 text-sm text-red-400 transition-colors hover:text-red-300"
+            >
+              <Radio className="h-3.5 w-3.5" />
+              Transmissões ao vivo
+            </Link>
+          </div>
+
+          <div>
+            <h3 className="mb-3 text-sm font-semibold uppercase tracking-wider">
               Dados
             </h3>
             <p className="text-sm text-muted-foreground">
@@ -79,6 +92,10 @@ export function Footer() {
 
         <p className="text-center text-xs text-muted-foreground">
           © {new Date().getFullYear()} {SITE_NAME}. Todos os direitos reservados.
+        </p>
+        <p className="mt-2 text-center text-xs text-muted-foreground">
+          Desenvolvido por{" "}
+          <span className="font-medium text-foreground/80">{DEVELOPER_NAME}</span>
         </p>
         <a
           href="https://www.effectivecpmnetwork.com/fybr8v6rkj?key=31f2f112d9c23fad70d214dbed6aeba5"
