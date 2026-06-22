@@ -7,6 +7,8 @@ import {
 } from "@/lib/news-api";
 import type { NewsCategory } from "@/types/news";
 
+export const dynamic = "force-dynamic";
+
 export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl;
   const category = searchParams.get("category");

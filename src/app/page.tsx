@@ -4,21 +4,13 @@ import { CategoryNav } from "@/components/news/category-nav";
 import { NewsFeed } from "@/components/news/news-feed";
 import { fetchWorldHeadlines, fetchTopHeadlines } from "@/lib/news-api";
 
-export const revalidate = 300;
+export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
-  let worldNews;
-  let tickerNews;
-
-  try {
-    [worldNews, tickerNews] = await Promise.all([
-      fetchWorldHeadlines(),
-      fetchTopHeadlines({ category: "general", pageSize: 15 }),
-    ]);
-  } catch {
-    worldNews = { status: "ok", totalResults: 0, articles: [] };
-    tickerNews = { status: "ok", totalResults: 0, articles: [] };
-  }
+  const [worldNews, tickerNews] = await Promise.all([
+    fetchWorldHeadlines(),
+    fetchTopHeadlines({ category: "general", pageSize: 15 }),
+  ]);
 
   const featured = worldNews.articles[0];
 

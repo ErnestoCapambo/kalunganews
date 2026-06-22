@@ -11,7 +11,7 @@ import {
 } from "@/lib/news-api";
 import type { NewsCategory } from "@/types/news";
 
-export const revalidate = 300;
+export const dynamic = "force-dynamic";
 
 interface CategoryPageProps {
   params: Promise<{ category: string }>;
@@ -39,18 +39,10 @@ export default async function CategoryPage({ params }: CategoryPageProps) {
 
   const catInfo = CATEGORIES.find((c) => c.id === category)!;
 
-  let news;
-  let tickerNews;
-
-  try {
-    [news, tickerNews] = await Promise.all([
-      fetchWorldHeadlines(category as NewsCategory),
-      fetchTopHeadlines({ category: category as NewsCategory, pageSize: 12 }),
-    ]);
-  } catch {
-    news = { status: "ok", totalResults: 0, articles: [] };
-    tickerNews = { status: "ok", totalResults: 0, articles: [] };
-  }
+  const [news, tickerNews] = await Promise.all([
+    fetchWorldHeadlines(category as NewsCategory),
+    fetchTopHeadlines({ category: category as NewsCategory, pageSize: 12 }),
+  ]);
 
   return (
     <>
