@@ -29,6 +29,10 @@ export const metadata: Metadata = {
     "internacional",
     "tempo real",
   ],
+  icons: {
+    icon: [{ url: "/icon", type: "image/png" }],
+    apple: [{ url: "/apple-icon", type: "image/png" }],
+  },
 };
 
 export default function RootLayout({
