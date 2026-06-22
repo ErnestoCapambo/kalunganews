@@ -45,6 +45,14 @@ export default function RootLayout({
       lang="pt"
       className={`${geistSans.variable} ${geistMono.variable} dark h-full antialiased`}
     >
+      <head>
+        <Script
+          async
+          src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-2610026328299575"
+          crossOrigin="anonymous"
+          strategy="beforeInteractive"
+        />
+      </head>
       <body className="min-h-full flex flex-col bg-background">
         <Script
           src="https://pl29843789.effectivecpmnetwork.com/4b/72/b2/4b72b22779695631038583eb2257db93.js"
