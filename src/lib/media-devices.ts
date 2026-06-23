@@ -1,5 +1,11 @@
 export type CaptureMode = "video" | "audio";
 
+export type MediaStreamOptions = {
+  audioDeviceId?: string;
+  videoDeviceId?: string;
+  facingMode?: "user" | "environment";
+};
+
 function mapMediaError(err: unknown, mode: CaptureMode): Error {
   if (err instanceof DOMException) {
     const device = mode === "video" ? "câmara ou microfone" : "microfone";
@@ -7,25 +13,25 @@ function mapMediaError(err: unknown, mode: CaptureMode): Error {
       case "NotFoundError":
         return new Error(
           mode === "audio"
-            ? "Nenhum microfone encontrado. Ligue um microfone e verifique em Definições → Som → Entrada do Windows."
-            : `Nenhum dispositivo de ${device} encontrado. Verifique as ligações e definições de som.`
+            ? "Nenhum microfone encontrado. Ligue um microfone e verifique em Definições → Som → Entrada."
+            : "Nenhuma câmara encontrada. Ligue a câmara (USB, capture card ou telemóvel) e autorize o acesso."
         );
       case "NotAllowedError":
       case "PermissionDeniedError":
         return new Error(
-          `Permissão de ${mode === "audio" ? "microfone" : "câmara/microfone"} negada. Autorize o acesso no ícone do browser, junto à barra de endereços.`
+          `Permissão de ${mode === "audio" ? "microfone" : "câmara/microfone"} negada. Autorize o acesso no browser.`
         );
       case "NotReadableError":
         return new Error(
-          "O dispositivo está a ser usado por outra aplicação. Feche outras apps (Zoom, Teams, etc.) e tente novamente."
+          "O dispositivo está a ser usado por outra aplicação. Feche outras apps e tente novamente."
         );
       case "OverconstrainedError":
         return new Error(
-          "O dispositivo selecionado não está disponível. Escolha outro microfone ou ligue um dispositivo de áudio."
+          "O dispositivo selecionado não está disponível. Escolha outra câmara ou microfone."
         );
       case "SecurityError":
         return new Error(
-          "Acesso bloqueado. O site precisa de HTTPS (ou localhost) para usar o microfone."
+          "Acesso bloqueado. Use HTTPS (obrigatório em telemóvel e produção)."
         );
       default:
         return new Error(err.message || `Erro ao aceder ao ${device}.`);
@@ -39,16 +45,26 @@ function mapMediaError(err: unknown, mode: CaptureMode): Error {
 function assertSecureContext() {
   if (location.protocol !== "https:" && location.hostname !== "localhost") {
     throw new Error(
-      "O microfone só funciona em HTTPS ou localhost. Aceda ao site por ligação segura."
+      "Câmara e microfone exigem HTTPS em produção. Em telemóvel, aceda sempre por ligação segura."
     );
   }
 }
 
+export function isMobileDevice(): boolean {
+  if (typeof navigator === "undefined") return false;
+  return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+}
+
 export async function listAudioInputDevices(): Promise<MediaDeviceInfo[]> {
   if (!navigator.mediaDevices?.enumerateDevices) return [];
-
   const devices = await navigator.mediaDevices.enumerateDevices();
   return devices.filter((d) => d.kind === "audioinput");
+}
+
+export async function listVideoInputDevices(): Promise<MediaDeviceInfo[]> {
+  if (!navigator.mediaDevices?.enumerateDevices) return [];
+  const devices = await navigator.mediaDevices.enumerateDevices();
+  return devices.filter((d) => d.kind === "videoinput");
 }
 
 async function tryGetUserMedia(
@@ -67,11 +83,25 @@ async function tryGetUserMedia(
   }
 }
 
+export async function primeMediaPermissions(
+  mode: CaptureMode = "video"
+): Promise<void> {
+  if (!navigator.mediaDevices?.getUserMedia) return;
+
+  const constraints: MediaStreamConstraints =
+    mode === "audio" ? { audio: true } : { video: true, audio: true };
+
+  try {
+    const temp = await navigator.mediaDevices.getUserMedia(constraints);
+    temp.getTracks().forEach((t) => t.stop());
+  } catch {
+    /* labels may remain empty until user grants on start */
+  }
+}
+
 export async function getAudioStream(deviceId?: string): Promise<MediaStream> {
   if (!navigator.mediaDevices?.getUserMedia) {
-    throw new Error(
-      "O seu browser não suporta captura de áudio. Use Chrome, Edge ou Firefox atualizado."
-    );
+    throw new Error("Browser não suporta captura de áudio.");
   }
 
   assertSecureContext();
@@ -84,15 +114,9 @@ export async function getAudioStream(deviceId?: string): Promise<MediaStream> {
   }
 
   let devices = await listAudioInputDevices();
-
   if (devices.length === 0 || devices.every((d) => !d.label)) {
-    try {
-      const temp = await navigator.mediaDevices.getUserMedia({ audio: true });
-      temp.getTracks().forEach((t) => t.stop());
-      devices = await listAudioInputDevices();
-    } catch (err) {
-      throw mapMediaError(err, "audio");
-    }
+    await primeMediaPermissions("audio");
+    devices = await listAudioInputDevices();
   }
 
   for (const device of devices) {
@@ -104,13 +128,7 @@ export async function getAudioStream(deviceId?: string): Promise<MediaStream> {
   }
 
   const fallbacks: MediaStreamConstraints[] = [
-    {
-      audio: {
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
-      },
-    },
+    { audio: { echoCancellation: true, noiseSuppression: true } },
     { audio: true },
   ];
 
@@ -119,24 +137,53 @@ export async function getAudioStream(deviceId?: string): Promise<MediaStream> {
     if (stream) return stream;
   }
 
-  throw new Error(
-    "Nenhum microfone encontrado. Ligue um microfone, defina-o como predefinido no Windows e recarregue a página."
-  );
+  throw new Error("Nenhum microfone encontrado.");
 }
 
-export async function getVideoStream(): Promise<MediaStream> {
+function buildVideoConstraints(options: MediaStreamOptions): MediaTrackConstraints {
+  const base: MediaTrackConstraints = {
+    width: { ideal: 1920 },
+    height: { ideal: 1080 },
+    frameRate: { ideal: 30 },
+  };
+
+  if (options.videoDeviceId) {
+    return { ...base, deviceId: { ideal: options.videoDeviceId } };
+  }
+
+  if (options.facingMode) {
+    return { ...base, facingMode: { ideal: options.facingMode } };
+  }
+
+  return base;
+}
+
+export async function getVideoStream(
+  options: MediaStreamOptions = {}
+): Promise<MediaStream> {
   if (!navigator.mediaDevices?.getUserMedia) {
-    throw new Error(
-      "O seu browser não suporta captura de vídeo. Use Chrome, Edge ou Firefox atualizado."
-    );
+    throw new Error("Browser não suporta captura de vídeo.");
   }
 
   assertSecureContext();
 
+  const videoConstraints = buildVideoConstraints(options);
+  const audioConstraints = options.audioDeviceId
+    ? { deviceId: { ideal: options.audioDeviceId } }
+    : true;
+
   const attempts: MediaStreamConstraints[] = [
-    { video: { facingMode: "user" }, audio: true },
+    { video: videoConstraints, audio: audioConstraints },
+    { video: videoConstraints, audio: true },
+    {
+      video: options.videoDeviceId
+        ? { deviceId: { ideal: options.videoDeviceId } }
+        : options.facingMode
+          ? { facingMode: options.facingMode }
+          : true,
+      audio: audioConstraints,
+    },
     { video: true, audio: true },
-    { video: { facingMode: { ideal: "user" } }, audio: true },
   ];
 
   for (const constraints of attempts) {
@@ -145,18 +192,24 @@ export async function getVideoStream(): Promise<MediaStream> {
   }
 
   throw new Error(
-    "Nenhuma câmara encontrada. Verifique se a câmara está ligada e autorize o acesso no browser."
+    "Nenhuma câmara disponível. Ligue uma câmara USB, capture card ou use a câmara do telemóvel."
   );
 }
 
 export async function getMediaStream(
   mode: CaptureMode,
-  audioDeviceId?: string
+  options: MediaStreamOptions = {}
 ): Promise<MediaStream> {
   try {
-    if (mode === "audio") return await getAudioStream(audioDeviceId);
-    return await getVideoStream();
+    if (mode === "audio") {
+      return await getAudioStream(options.audioDeviceId);
+    }
+    return await getVideoStream(options);
   } catch (err) {
     throw mapMediaError(err, mode);
   }
+}
+
+export function stopMediaStream(stream: MediaStream | null) {
+  stream?.getTracks().forEach((track) => track.stop());
 }

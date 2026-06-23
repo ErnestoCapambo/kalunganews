@@ -10,13 +10,19 @@ import {
   Copy,
   Check,
   Users,
+  SwitchCamera,
+  Eye,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { AudioVisualizer } from "@/components/live/audio-visualizer";
 import {
   getMediaStream,
+  isMobileDevice,
   listAudioInputDevices,
+  listVideoInputDevices,
+  primeMediaPermissions,
+  stopMediaStream,
   type CaptureMode,
 } from "@/lib/media-devices";
 import { cn } from "@/lib/utils";
@@ -26,54 +32,130 @@ export type StreamMode = CaptureMode;
 export function LiveStudio() {
   const [mode, setMode] = useState<StreamMode>("video");
   const [isLive, setIsLive] = useState(false);
+  const [isPreviewing, setIsPreviewing] = useState(false);
   const [roomId, setRoomId] = useState("");
   const [viewers, setViewers] = useState(0);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [audioDevices, setAudioDevices] = useState<MediaDeviceInfo[]>([]);
+  const [videoDevices, setVideoDevices] = useState<MediaDeviceInfo[]>([]);
   const [selectedMic, setSelectedMic] = useState("");
+  const [selectedCamera, setSelectedCamera] = useState("");
+  const [facingMode, setFacingMode] = useState<"user" | "environment">("user");
+  const [isMobile, setIsMobile] = useState(false);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const previewStreamRef = useRef<MediaStream | null>(null);
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const peerRef = useRef<Peer | null>(null);
   const callsRef = useRef<MediaConnection[]>([]);
 
-  const refreshAudioDevices = useCallback(async () => {
+  const refreshDevices = useCallback(async () => {
     try {
-      const devices = await listAudioInputDevices();
-      setAudioDevices(devices);
-      if (devices.length > 0 && !selectedMic) {
-        setSelectedMic(devices[0].deviceId);
+      await primeMediaPermissions(mode);
+      const [audio, video] = await Promise.all([
+        listAudioInputDevices(),
+        listVideoInputDevices(),
+      ]);
+      setAudioDevices(audio);
+      setVideoDevices(video);
+      if (audio.length > 0 && !selectedMic) {
+        setSelectedMic(audio[0].deviceId);
+      }
+      if (video.length > 0 && !selectedCamera) {
+        setSelectedCamera(video[0].deviceId);
       }
     } catch {
       setAudioDevices([]);
+      setVideoDevices([]);
     }
-  }, [selectedMic]);
+  }, [mode, selectedMic, selectedCamera]);
 
   useEffect(() => {
-    if (mode === "audio") {
-      void refreshAudioDevices();
-    }
-  }, [mode, refreshAudioDevices]);
+    setIsMobile(isMobileDevice());
+    void refreshDevices();
+
+    navigator.mediaDevices?.addEventListener("devicechange", refreshDevices);
+    return () => {
+      navigator.mediaDevices?.removeEventListener("devicechange", refreshDevices);
+    };
+  }, [refreshDevices]);
+
+  const stopPreview = useCallback(() => {
+    stopMediaStream(previewStreamRef.current);
+    previewStreamRef.current = null;
+    if (!isLive && videoRef.current) videoRef.current.srcObject = null;
+    setIsPreviewing(false);
+  }, [isLive]);
 
   const stopBroadcast = useCallback(() => {
     callsRef.current.forEach((call) => call.close());
     callsRef.current = [];
-    streamRef.current?.getTracks().forEach((track) => track.stop());
+    stopMediaStream(streamRef.current);
     streamRef.current = null;
     setLocalStream(null);
     peerRef.current?.destroy();
     peerRef.current = null;
+    stopPreview();
     if (videoRef.current) videoRef.current.srcObject = null;
     setIsLive(false);
     setViewers(0);
     setRoomId("");
-  }, []);
+  }, [stopPreview]);
+
+  const buildMediaOptions = useCallback(() => {
+    return {
+      audioDeviceId: selectedMic || undefined,
+      videoDeviceId:
+        mode === "video" && !isMobile ? selectedCamera || undefined : undefined,
+      facingMode: mode === "video" && isMobile ? facingMode : undefined,
+    };
+  }, [mode, selectedMic, selectedCamera, facingMode, isMobile]);
+
+  const startPreview = async () => {
+    if (mode !== "video") return;
+    try {
+      setError(null);
+      stopPreview();
+      const stream = await getMediaStream("video", buildMediaOptions());
+      previewStreamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+      }
+      setIsPreviewing(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erro na pré-visualização.");
+    }
+  };
+
+  const switchMobileCamera = async () => {
+    if (isLive) return;
+    const next = facingMode === "user" ? "environment" : "user";
+    setFacingMode(next);
+
+    if (isPreviewing) {
+      stopMediaStream(previewStreamRef.current);
+      previewStreamRef.current = null;
+
+      const stream = await getMediaStream("video", {
+        audioDeviceId: selectedMic || undefined,
+        facingMode: next,
+      });
+
+      previewStreamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+      }
+    }
+  };
 
   const startBroadcast = async () => {
     try {
       setError(null);
+      stopPreview();
       const id = `kn-${Math.random().toString(36).slice(2, 8)}`;
 
       const peer = new Peer(id, {
@@ -91,10 +173,7 @@ export function LiveStudio() {
         peer.on("error", (err) => reject(err));
       });
 
-      const stream = await getMediaStream(
-        mode,
-        mode === "audio" ? selectedMic || undefined : undefined
-      );
+      const stream = await getMediaStream(mode, buildMediaOptions());
       streamRef.current = stream;
       setLocalStream(stream);
 
@@ -103,16 +182,13 @@ export function LiveStudio() {
         await videoRef.current.play();
       }
 
-      if (mode === "audio") {
-        await refreshAudioDevices();
-      }
+      await refreshDevices();
 
       peer.on("call", (call) => {
         if (!streamRef.current) return;
         call.answer(streamRef.current);
         callsRef.current.push(call);
         setViewers((v) => v + 1);
-
         call.on("close", () => {
           callsRef.current = callsRef.current.filter((c) => c !== call);
           setViewers((v) => Math.max(0, v - 1));
@@ -147,7 +223,12 @@ export function LiveStudio() {
         <Button
           variant={mode === "video" ? "default" : "outline"}
           size="sm"
-          onClick={() => !isLive && setMode("video")}
+          onClick={() => {
+            if (!isLive) {
+              stopPreview();
+              setMode("video");
+            }
+          }}
           disabled={isLive}
           className={cn(
             mode === "video" && "bg-gradient-to-r from-red-600 to-red-500"
@@ -159,7 +240,12 @@ export function LiveStudio() {
         <Button
           variant={mode === "audio" ? "default" : "outline"}
           size="sm"
-          onClick={() => !isLive && setMode("audio")}
+          onClick={() => {
+            if (!isLive) {
+              stopPreview();
+              setMode("audio");
+            }
+          }}
           disabled={isLive}
           className={cn(
             mode === "audio" && "bg-gradient-to-r from-blue-600 to-blue-500"
@@ -169,6 +255,114 @@ export function LiveStudio() {
           Áudio
         </Button>
       </div>
+
+      {mode === "video" && !isLive && (
+        <div className="grid gap-4 sm:grid-cols-2">
+          {!isMobile && (
+            <div className="space-y-2 sm:col-span-2">
+              <label
+                htmlFor="camera-select"
+                className="text-xs font-semibold uppercase tracking-wider text-muted-foreground"
+              >
+                Câmara
+              </label>
+              {videoDevices.length > 0 ? (
+                <select
+                  id="camera-select"
+                  value={selectedCamera}
+                  onChange={(e) => {
+                    setSelectedCamera(e.target.value);
+                    stopPreview();
+                  }}
+                  className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm outline-none focus:border-red-500/50"
+                >
+                  {videoDevices.map((device) => (
+                    <option key={device.deviceId} value={device.deviceId}>
+                      {device.label ||
+                        `Câmara ${device.deviceId.slice(0, 8)}`}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <p className="rounded-lg border border-amber-500/30 bg-amber-950/20 px-3 py-2 text-sm text-amber-200">
+                  Nenhuma câmara detetada. Ligue USB, webcam ou capture card.
+                </p>
+              )}
+            </div>
+          )}
+
+          {isMobile && (
+            <div className="space-y-2 sm:col-span-2">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Câmara do telemóvel
+              </p>
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant={facingMode === "user" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setFacingMode("user")}
+                >
+                  Frontal
+                </Button>
+                <Button
+                  type="button"
+                  variant={facingMode === "environment" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setFacingMode("environment")}
+                >
+                  Traseira
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={switchMobileCamera}
+                  disabled={!isPreviewing || isLive}
+                >
+                  <SwitchCamera className="mr-2 h-4 w-4" />
+                  Alternar
+                </Button>
+              </div>
+            </div>
+          )}
+
+          <div className="space-y-2">
+            <label
+              htmlFor="video-mic-select"
+              className="text-xs font-semibold uppercase tracking-wider text-muted-foreground"
+            >
+              Microfone
+            </label>
+            <select
+              id="video-mic-select"
+              value={selectedMic}
+              onChange={(e) => setSelectedMic(e.target.value)}
+              className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm outline-none focus:border-red-500/50"
+            >
+              {audioDevices.map((device) => (
+                <option key={device.deviceId} value={device.deviceId}>
+                  {device.label || `Microfone ${device.deviceId.slice(0, 8)}`}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {!isLive && (
+            <div className="flex items-end">
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full"
+                onClick={startPreview}
+              >
+                <Eye className="mr-2 h-4 w-4" />
+                Pré-visualizar câmara
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
 
       {mode === "audio" && !isLive && (
         <div className="space-y-2">
@@ -193,8 +387,7 @@ export function LiveStudio() {
             </select>
           ) : (
             <p className="rounded-lg border border-amber-500/30 bg-amber-950/20 px-3 py-2 text-sm text-amber-200">
-              Nenhum microfone detetado. Ligue um microfone e clique em Iniciar
-              transmissão — o browser irá pedir permissão.
+              Nenhum microfone detetado. O browser irá pedir permissão ao iniciar.
             </p>
           )}
         </div>
@@ -210,11 +403,11 @@ export function LiveStudio() {
               playsInline
               className="h-full w-full object-cover"
             />
-            {!isLive && (
+            {!isLive && !isPreviewing && (
               <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/60">
                 <Video className="h-12 w-12 text-muted-foreground" />
-                <p className="text-sm text-muted-foreground">
-                  Pré-visualização da câmara
+                <p className="px-4 text-center text-sm text-muted-foreground">
+                  Selecione a câmara e clique em Pré-visualizar
                 </p>
               </div>
             )}
@@ -279,7 +472,7 @@ export function LiveStudio() {
         </div>
       )}
 
-      <div className="flex gap-3">
+      <div className="flex flex-wrap gap-3">
         {!isLive ? (
           <Button
             onClick={startBroadcast}
@@ -292,6 +485,11 @@ export function LiveStudio() {
           <Button variant="destructive" onClick={stopBroadcast}>
             <Square className="mr-2 h-4 w-4" />
             Terminar transmissão
+          </Button>
+        )}
+        {isPreviewing && !isLive && (
+          <Button variant="outline" onClick={stopPreview}>
+            Parar pré-visualização
           </Button>
         )}
       </div>

@@ -2,6 +2,7 @@
 
 import { Radio, Tv, Headphones } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { LiveCompatibilityNotice } from "@/components/live/live-compatibility-notice";
 import { LiveStudio } from "@/components/live/live-studio";
 import { LiveViewer } from "@/components/live/live-viewer";
 import type { StreamMode } from "@/components/live/live-studio";
@@ -54,6 +55,10 @@ export function LiveHub({ initialRoom, initialTab, initialMode }: LiveHubProps) 
           <LiveStudio />
         </TabsContent>
       </Tabs>
+
+      <div className="mt-10">
+        <LiveCompatibilityNotice />
+      </div>
     </div>
   );
 }
